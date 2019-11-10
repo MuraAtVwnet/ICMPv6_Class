@@ -22,6 +22,16 @@ class ICMPv6Client {
 	# ソケット
 	[System.Net.Sockets.Socket] $CV_Socket
 
+	# ICMPv6 データ
+	[Byte[]] $CV_ICMPv6Data
+
+	# 送信元 IPv6 アドレス
+	[string] $SrcFullIPv6Address
+
+	# 宛先 IPv6 アドレス
+	[string] $DstFullIPv6Address
+
+	#------------------------------------------------
 	# ストリーム
 	[System.Net.Sockets.NetworkStream] $CV_Stream
 
@@ -43,33 +53,6 @@ class ICMPv6Client {
 	#-------------------------------------------------------------------------
 	# 内部 メソッド (protected 扱い)
 	#-------------------------------------------------------------------------
-
-	#-------------------------------------------------------------------------
-	# 公開 メソッド (public 扱い)
-	#-------------------------------------------------------------------------
-
-	##########################################################################
-	# コンストラクタ
-	##########################################################################
-	ICMPv6Client(){
-		$AddressFamily = [System.Net.Sockets.AddressFamily]::InterNetworkV6
-		$SocketType = [System.Net.Sockets.SocketType]::Raw
-		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
-
-		$this.CV_Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
-	}
-
-	##########################################################################
-	# 環境設定変更
-	##########################################################################
-	[void]SetEnvironment( [int] $TimeOut ){
-
-		# タイムアウト
-		if( $TimeOut -ne [int]$null ){
-			$this.CCONF_TimeOut = $TimeOut
-		}
-	}
-
 	##########################################################################
 	# 短縮 IPv6 アドレス展開
 	##########################################################################
@@ -159,39 +142,6 @@ class ICMPv6Client {
 		Return $FullIPv6Address
 	}
 
-	##########################################################################
-	# ICMPv6 データ作成
-	##########################################################################
-	[byte[]] CreateICMPv6([byte]$Type, [byte]$Code, [byte[]]$MessageBody){
-		## IPv6(RFC 8200)
-		# Version(4) (0110)
-		# トラフィッククラス(8)
-		# フローラベル(20) : 0x60 0x00 0x00 0x00
-		# Payload Length(16)
-		# Next ヘッダー(8) : 0x3a
-		# Hop limit(8) : 0xff
-		# 送信元 IPv6 アドレス(128)
-		# 宛先 IPv6 アドレス(128)
-
-		## ICMPv6 (RFC 4443)
-		[byte[]]$ICMPv6 = @()
-
-		# Type(8)
-		$ICMPv6 += $Type
-
-		# Code(8)
-		$ICMPv6 += $Code
-
-		# チェックサム(16)
-		$Checksum = New-Object byte[] 2
-		$Checksum = @(0x00, 0x00)
-		$ICMPv6 += $Checksum
-
-		# Message Body
-		$ICMPv6 += $MessageBody
-
-		Return $ICMPv6
-	}
 
 	##########################################################################
 	# UINT16 を Byte 列にセットする
@@ -242,16 +192,18 @@ class ICMPv6Client {
 	##########################################################################
 	# チェックサム計算
 	##########################################################################
-	[System.UInt16] ComputeChecksum([byte[]]$SrcIP, [byte[]]$DstIP, [byte[]]$Data){
+	[System.UInt16] ComputeChecksum(){
+
+		[byte[]]$Body = @()
 
 		# 送信元 IPv6 アドレス(128)
-		[byte[]]$Body += $SrcIP
+		$Body += $this.SetIPv6AddresstoBytes($this.SrcFullIPv6Address)
 
 		# 宛先 IPv6 アドレス(128)
-		$Body += $DstIP
+		$Body += $this.SetIPv6AddresstoBytes($this.DstFullIPv6Address)
 
 		# 上位レイヤー プロトコル パケット長(32)
-		[System.UInt32]$Length = $Data.Length
+		[System.UInt32]$Length = $this.CV_ICMPv6Data.Length
 		[byte[]]$ByteLength = $this.SetUint32toBytes($Length)
 		$Body += $ByteLength
 
@@ -265,7 +217,7 @@ class ICMPv6Client {
 		$Body += $Protocol
 
 		# 上位レイヤー データ
-		$Body += $Data
+		$Body += $this.CV_ICMPv6Data
 
 		# Sum を求める
 		[System.UInt32]$Sum = 0
@@ -276,10 +228,10 @@ class ICMPv6Client {
 			$Sum += $this.Set2ByteToUint16($Bytes)
 		}
 
-		# オーバーフロー
+		# オーバーフロー($Sum >> 16)
 		[System.UInt16]$OverFlow = $Sum -shr 16
 
-		# Sum の Uint16 部分
+		# Sum の Uint16 部分($Sum << 16 >> 16)
 		[System.UInt32]$Sum16 = ($Sum -shl 16) -shr 16
 
 		# オーバーフロー加算
@@ -294,33 +246,102 @@ class ICMPv6Client {
 	##########################################################################
 	# チェックサム セット
 	##########################################################################
-	[byte[]] SetComputeChecksum( [System.UInt16]$Checksum, [byte[]]$ICMPv6 ){
+	[void] SetComputeChecksum( [System.UInt16]$Checksum ){
 
 		[byte[]]$ByteChecksum = $this.SetUint16toBytes($Checksum)
 
-		$ICMPv6[2] = $ByteChecksum[0]
-		$ICMPv6[3] = $ByteChecksum[1]
+		$this.CV_ICMPv6Data[2] = $ByteChecksum[0]
+		$this.CV_ICMPv6Data[3] = $ByteChecksum[1]
+	}
 
-		Return $ICMPv6
+	##########################################################################
+	# ICMPv6 データ作成
+	##########################################################################
+	[void] CreateICMPv6([byte]$Type, [byte]$Code, [byte[]]$MessageBody){
+		## IPv6(RFC 8200)
+		# Version(4) (0110)
+		# トラフィッククラス(8)
+		# フローラベル(20) : 0x60 0x00 0x00 0x00
+		# Payload Length(16)
+		# Next ヘッダー(8) : 0x3a
+		# Hop limit(8) : 0xff
+		# 送信元 IPv6 アドレス(128)
+		# 宛先 IPv6 アドレス(128)
+
+		## ICMPv6 (RFC 4443)
+		$this.CV_ICMPv6Data = @()
+
+		# Type(8)
+		$this.CV_ICMPv6Data += $Type
+
+		# Code(8)
+		$this.CV_ICMPv6Data += $Code
+
+		# チェックサム(16)
+		$Checksum = New-Object byte[] 2
+		$Checksum = @(0x00, 0x00)
+		$this.CV_ICMPv6Data += $Checksum
+
+		# Message Body
+		$this.CV_ICMPv6Data += $MessageBody
+	}
+
+	#-------------------------------------------------------------------------
+	# 公開 メソッド (public 扱い)
+	#-------------------------------------------------------------------------
+
+	##########################################################################
+	# コンストラクタ
+	##########################################################################
+	ICMPv6Client(){
+		$AddressFamily = [System.Net.Sockets.AddressFamily]::InterNetworkV6
+		$SocketType = [System.Net.Sockets.SocketType]::Raw
+		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
+
+		$this.CV_Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
+	}
+
+	##########################################################################
+	# 環境設定変更
+	##########################################################################
+	[void]SetEnvironment(){
+		# 必要であれば書く
+	}
+
+	##########################################################################
+	# IPv6 アドレス指定
+	##########################################################################
+	[void]SetIPv6Address( [string]$SrcIPv6Address, [string]$DstIPv6Address){
+		# 送信元 IPv6 アドレス(128)
+		$this.SrcFullIPv6Address = $this.DecodeIPv6Address($SrcIPv6Address)
+
+		# 宛先 IPv6 アドレス(128)
+		$this.DstFullIPv6Address = $this.DecodeIPv6Address($DstIPv6Address)
 	}
 
 	##########################################################################
 	# 送信
 	##########################################################################
-	[void]Send( [string]$Message, [bool]$Display ){
+	[void]Send( [int]$Type, [int]$Code, [byte[]]$Data ){
+		# ICMPv6 データ作成
+
+		# チェックサム計算
+
+		# チェックサム セット
+
 		# SendTo
 	}
 
 	##########################################################################
 	# 受信
 	##########################################################################
-	[byte[]] Receive ( [string]$Prompt ){
+	[byte[]] Receive (){
 		# ReceiveFrom
 		Return (New-Object byte[] 3)
 	}
 
 	##########################################################################
-	# 破壊
+	# オブジェクト破棄
 	##########################################################################
 	Dispose(){
 		$Shutdown = [System.Net.Sockets.SocketShutdown]::Both
@@ -329,7 +350,11 @@ class ICMPv6Client {
 			$this.CV_Socket.Close()
 		}
 		catch{
-			$this.CV_Socket.Close()
+			# エラーを握りつぶす
+			try {
+				$this.CV_Socket.Close()
+			}
+			catch{}
 		}
 	}
 }
