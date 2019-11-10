@@ -302,6 +302,32 @@ class ICMPv6Client {
 	}
 
 	##########################################################################
+	# コンストラクタ
+	##########################################################################
+	ICMPv6Client( [string]$SrcIPv6Address, [string]$DstIPv6Address ){
+		$this.SetIPv6Address( $SrcIPv6Address, $DstIPv6Address)
+		$this.ICMPv6Client()
+	}
+
+	##########################################################################
+	# オブジェクト破棄
+	##########################################################################
+	Dispose(){
+		$Shutdown = [System.Net.Sockets.SocketShutdown]::Both
+		try {
+			$this.CV_Socket.Shutdown($Shutdown)
+			$this.CV_Socket.Close()
+		}
+		catch{
+			# エラーは握りつぶす w
+			try {
+				$this.CV_Socket.Close()
+			}
+			catch{}
+		}
+	}
+
+	##########################################################################
 	# 環境設定変更
 	##########################################################################
 	[void]SetEnvironment(){
@@ -322,12 +348,15 @@ class ICMPv6Client {
 	##########################################################################
 	# 送信
 	##########################################################################
-	[void]Send( [int]$Type, [int]$Code, [byte[]]$Data ){
+	[void]Send( [byte]$Type, [byte]$Code, [byte[]]$Data ){
 		# ICMPv6 データ作成
+		$this.CreateICMPv6($Type, $Code, $Data)
 
 		# チェックサム計算
+		[System.UInt16] $Checksum = $this.ComputeChecksum()
 
 		# チェックサム セット
+		$this.SetComputeChecksum($Checksum)
 
 		# SendTo
 	}
@@ -340,23 +369,6 @@ class ICMPv6Client {
 		Return (New-Object byte[] 3)
 	}
 
-	##########################################################################
-	# オブジェクト破棄
-	##########################################################################
-	Dispose(){
-		$Shutdown = [System.Net.Sockets.SocketShutdown]::Both
-		try {
-			$this.CV_Socket.Shutdown($Shutdown)
-			$this.CV_Socket.Close()
-		}
-		catch{
-			# エラーを握りつぶす
-			try {
-				$this.CV_Socket.Close()
-			}
-			catch{}
-		}
-	}
 }
 
 
