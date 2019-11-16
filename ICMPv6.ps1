@@ -26,9 +26,11 @@ class ICMPv6Client {
 	[Byte[]] $CV_ICMPv6Data
 
 	# 送信元 IPv6 アドレス
+	[string] $SrcIPv6Address
 	[string] $SrcFullIPv6Address
 
 	# 宛先 IPv6 アドレス
+	[string] $DstIPv6Address
 	[string] $DstFullIPv6Address
 
 	#------------------------------------------------
@@ -53,6 +55,32 @@ class ICMPv6Client {
 	#-------------------------------------------------------------------------
 	# 内部 メソッド (protected 扱い)
 	#-------------------------------------------------------------------------
+	##########################################################################
+	# ホストバイトオーダー/ネットワークバイトオーダー(ビッグエンディアン)変換
+	##########################################################################
+	[byte[]]HostNetwork([byte[]]$Data){
+
+		$Max = $Data.Length
+		[byte[]]$ReturnData = New-Object byte[] $Max
+
+		# CPU アーキテクチャが IsLittleEndian か
+		if( [System.BitConverter]::IsLittleEndian ){
+			# リトルエンディアン to ビッグエンディアン
+			# $ReturnData = [System.Array]::Reverse($Data)
+			for( $i = 0; $i -lt $Max; $i++ ){
+				$ReturnData[$Max - $i -1] = $Data[$i]
+			}
+		}
+		else{
+			# 変換無し
+			for( $i = 0; $i -lt $Max; $i++ ){
+				$ReturnData[$i] = $Data[$i]
+			}
+		}
+
+		Return $ReturnData
+	}
+
 	##########################################################################
 	# 短縮 IPv6 アドレス展開
 	##########################################################################
@@ -142,69 +170,48 @@ class ICMPv6Client {
 		Return $FullIPv6Address
 	}
 
-
-	##########################################################################
-	# UINT16 を Byte 列にセットする
-	##########################################################################
-	[byte[]]SetUint16toBytes([System.UInt16]$Uint){
-		$Bytes = New-Object byte[] 2
-		$Bytes[0] = $Uint -shr 8
-		$Bytes[1] = ($Uint -shl 8) -shr 8
-		Return $Bytes
-	}
-
-	##########################################################################
-	# UINT32 を Byte 列にセットする
-	##########################################################################
-	[byte[]]SetUint32toBytes([System.UInt32]$Uint){
-		$Bytes = New-Object byte[] 4
-		$Bytes[0] = $Uint -shr 24
-		$Bytes[1] = ($Uint -shl 8) -shr 24
-		$Bytes[2] = ($Uint -shl 16) -shr 24
-		$Bytes[3] = ($Uint -shl 24) -shr 24
-		Return $Bytes
-	}
-
 	##########################################################################
 	# IPv6 Address を Byte 列にセットする
 	##########################################################################
 	[byte[]]SetIPv6AddresstoBytes([string]$IPv6Address){
-		$AdressesPart = $IPv6Address.Split(":")
 
 		[byte[]]$Bytes = @()
+
+		$AdressesPart = $IPv6Address.Split(":")
+
 		$Max = $AdressesPart.Length
 		for( $i = 0 ; $i -lt $Max ; $i++){
-			[System.UInt16]$Uint = [Convert]::ToUInt16($AdressesPart[$i], 16)
-			$Bytes += $this.SetUint16toBytes($Uint)
+			[System.UInt16]$Uint = [System.Convert]::ToUInt16($AdressesPart[$i], 16)
+			[byte[]]$TowBytes = [System.BitConverter]::GetBytes($Uint)
+			[byte[]]$NetworkOrder = $this.HostNetwork($TowBytes)
+			$Bytes += $NetworkOrder
 		}
 
 		Return $Bytes
 	}
 
 	##########################################################################
-	# 2 byte を UINT16 にする
+	# ICMPv6 チェックサム用データ作成
 	##########################################################################
-	[System.UInt16]Set2ByteToUint16([byte[]]$Bytes){
-		[System.UInt16]$Uint = ($Bytes[0] -shl 8) + $Bytes[1]
-		Return $Uint
-	}
-
-	##########################################################################
-	# チェックサム計算
-	##########################################################################
-	[System.UInt16] ComputeChecksum(){
+	[byte[]]MakeICMPv6ChecksumData(){
 
 		[byte[]]$Body = @()
 
+		### 疑似ヘッダ
+
 		# 送信元 IPv6 アドレス(128)
+		# $IPv6AddressBytes = $this.SetIPv6AddresstoBytes($this.SrcFullIPv6Address)
 		$Body += $this.SetIPv6AddresstoBytes($this.SrcFullIPv6Address)
 
 		# 宛先 IPv6 アドレス(128)
+		# $IPv6AddressBytes = $this.SetIPv6AddresstoBytes($this.DstFullIPv6Address)
 		$Body += $this.SetIPv6AddresstoBytes($this.DstFullIPv6Address)
 
 		# 上位レイヤー プロトコル パケット長(32)
 		[System.UInt32]$Length = $this.CV_ICMPv6Data.Length
-		[byte[]]$ByteLength = $this.SetUint32toBytes($Length)
+		#$Length = [System.Net.IPAddress]::HostToNetworkOrder( $Length )
+		[byte[]]$ByteLength = [System.BitConverter]::GetBytes($Length)
+		$ByteLength = $this.HostNetwork($ByteLength)
 		$Body += $ByteLength
 
 		# zero(24)
@@ -216,39 +223,55 @@ class ICMPv6Client {
 		[byte]$Protocol = 58	# ICMPv6
 		$Body += $Protocol
 
-		# 上位レイヤー データ
+		### 上位レイヤー データ
 		$Body += $this.CV_ICMPv6Data
 
-		# Sum を求める
+		Return $Body
+	}
+
+	##########################################################################
+	# チェックサム計算
+	##########################################################################
+	[byte[]] ComputeChecksum([byte[]]$Body){
+
+		# 2バイトずつ取り出し、Sum を求める
 		[System.UInt32]$Sum = 0
 		$Max = $Body.Length
 		$Bytes = New-Object byte[] 2
 		for( $i = 0; $i -lt $Max; $i += 2 ){
-			$Bytes = @( $Body[$i], $Body[$i + 1])
-			$Sum += $this.Set2ByteToUint16($Bytes)
+			$Bytes = @($Body[$i], $Body[$i +1])
+			$Bytes = $this.HostNetwork( $Bytes )
+			[System.UInt16]$Data = [System.BitConverter]::ToUInt16($Bytes, 0)
+
+			$Sum += $Data
 		}
 
-		# オーバーフロー($Sum >> 16)
+		# オーバーフロー部分取り出し($Sum >> 16)
 		[System.UInt16]$OverFlow = $Sum -shr 16
 
 		# Sum の Uint16 部分($Sum << 16 >> 16)
-		[System.UInt32]$Sum16 = ($Sum -shl 16) -shr 16
+		[System.UInt32]$Sum32 = ($Sum -shl 16) -shr 16
 
 		# オーバーフロー加算
-		$Sum16 += $OverFlow
+		$Sum32 += $OverFlow
 
 		# Uint16 部分のみ取り出す
-		[System.UInt16]$Checksum = ($Sum16 -shl 16) -shr 16
+		[System.UInt16]$Sum16 = ($Sum32 -shl 16) -shr 16
 
-		Return $Checksum
+		# 1の補数(ビット反転)する
+		[System.UInt16]$Checksum = $Sum16 -bxor 0xffff
+
+		# ネットワークオーダーにする
+		[byte[]]$ByteChecksum = [System.BitConverter]::GetBytes($Checksum)
+		$ByteChecksum = $this.HostNetwork($ByteChecksum)
+
+		Return $ByteChecksum
 	}
 
 	##########################################################################
 	# チェックサム セット
 	##########################################################################
-	[void] SetComputeChecksum( [System.UInt16]$Checksum ){
-
-		[byte[]]$ByteChecksum = $this.SetUint16toBytes($Checksum)
+	[void] SetComputeChecksum( [byte[]]$ByteChecksum ){
 
 		$this.CV_ICMPv6Data[2] = $ByteChecksum[0]
 		$this.CV_ICMPv6Data[3] = $ByteChecksum[1]
@@ -305,8 +328,14 @@ class ICMPv6Client {
 	# コンストラクタ
 	##########################################################################
 	ICMPv6Client( [string]$SrcIPv6Address, [string]$DstIPv6Address ){
+
 		$this.SetIPv6Address( $SrcIPv6Address, $DstIPv6Address)
-		$this.ICMPv6Client()
+
+		$AddressFamily = [System.Net.Sockets.AddressFamily]::InterNetworkV6
+		$SocketType = [System.Net.Sockets.SocketType]::Raw
+		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
+
+		$this.CV_Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
 	}
 
 	##########################################################################
@@ -338,10 +367,13 @@ class ICMPv6Client {
 	# IPv6 アドレス指定
 	##########################################################################
 	[void]SetIPv6Address( [string]$SrcIPv6Address, [string]$DstIPv6Address){
+
 		# 送信元 IPv6 アドレス(128)
+		$this.SrcIPv6Address = $SrcIPv6Address
 		$this.SrcFullIPv6Address = $this.DecodeIPv6Address($SrcIPv6Address)
 
 		# 宛先 IPv6 アドレス(128)
+		$this.DstIPv6Address = $DstIPv6Address
 		$this.DstFullIPv6Address = $this.DecodeIPv6Address($DstIPv6Address)
 	}
 
@@ -352,11 +384,14 @@ class ICMPv6Client {
 		# ICMPv6 データ作成
 		$this.CreateICMPv6($Type, $Code, $Data)
 
+		# チェックサム用データ作成
+		[byte[]]$Body = $this.MakeICMPv6ChecksumData()
+
 		# チェックサム計算
-		[System.UInt16] $Checksum = $this.ComputeChecksum()
+		[byte[]] $ByteChecksum = $this.ComputeChecksum($Body)
 
 		# チェックサム セット
-		$this.SetComputeChecksum($Checksum)
+		$this.SetComputeChecksum($ByteChecksum)
 
 		# SendTo
 	}
