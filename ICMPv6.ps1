@@ -17,21 +17,19 @@ class ICMPv6Client {
 	[int] $CCONF_TimeOut = 30
 
 	#-------------------------------------------------------------------------
-	# 変数($CV_ : Class Variable)
+	# 変数
 	#-------------------------------------------------------------------------
 	# ソケット
-	[System.Net.Sockets.Socket] $CV_Socket
+	[System.Net.Sockets.Socket] $Socket
 
 	# ICMPv6 データ
-	[Byte[]] $CV_ICMPv6Data
+	[Byte[]] $ICMPv6Data
 
 	# 送信元 IPv6 アドレス
-	[string] $SrcIPv6Address
-	[string] $SrcFullIPv6Address
+	[System.Net.IPAddress] $SrcIPv6Address
 
 	# 宛先 IPv6 アドレス
-	[string] $DstIPv6Address
-	[string] $DstFullIPv6Address
+	[System.Net.IPAddress] $DstIPv6Address
 
 	#------------------------------------------------
 	# ストリーム
@@ -65,8 +63,7 @@ class ICMPv6Client {
 
 		# CPU アーキテクチャが IsLittleEndian か
 		if( [System.BitConverter]::IsLittleEndian ){
-			# リトルエンディアン to ビッグエンディアン
-			# $ReturnData = [System.Array]::Reverse($Data)
+			# バイト配列逆転
 			for( $i = 0; $i -lt $Max; $i++ ){
 				$ReturnData[$Max - $i -1] = $Data[$i]
 			}
@@ -82,115 +79,6 @@ class ICMPv6Client {
 	}
 
 	##########################################################################
-	# 短縮 IPv6 アドレス展開
-	##########################################################################
-	[string] DecodeIPv6Address([string] $IPv6Address){
-
-		$Max = $IPv6Address.Length
-
-		# : で区切られた内側の文字
-		$Str4 = ""
-
-		# : で区切られた内側の文字数
-		$Len4 = 0
-
-		# : 区切られた文字群
-		[string[]]$Field8 = @()
-
-		# 展開された IPv6 アドレス
-		$FullIPv6Address = ""
-
-		# 省略フィールドが使用されたフラグ
-		$OmittedFlag = $False
-		$OmittedPosition = 8
-		$Omitted = 0
-		$i = 0
-		while($True){
-			if(($IPv6Address[$i] -eq [char]":") -or ($i -ge $Max)){
-				# リーディングゼロ省略
-				if( $Len4 -ne 0 ){
-					$Str4 = "0" * (4 - $Len4) + $Str4
-					$Field8 += $Str4
-					$Str4 = ""
-					$Len4 = 0
-					if( $OmittedFlag -eq $True ){
-						$Omitted--
-					}
-				}
-				# フィールド省略
-				else{
-					$OmittedPosition = $Field8.Length
-					$Omitted = 8 - $OmittedPosition
-					$OmittedFlag = $True
-				}
-
-				if( $i -ge $Max ){
-					break
-				}
-				$i++
-			}
-			else{
-				$Str4 += $IPv6Address[$i]
-				$i++
-				$Len4++
-				if( $Len4 -gt 4 ){
-					$ErrorActionPreference = "Stop"
-					throw "IPv6 アドレス形式異常 : $IPv6Address"
-				}
-			}
-		}
-
-		# 省略補完
-		$Max = $Field8.Length
-		$i = 0
-		while($True){
-			# :: の時
-			if($Field8.Length -eq 0){
-				$FullIPv6Address += "0000:" * $Omitted
-				break
-			}
-
-			$FullIPv6Address += $Field8[$i] + ":"
-			$i++
-
-			# 省略開始
-			if( $i -eq $OmittedPosition){
-				# 省略分挟み込む
-				$FullIPv6Address += "0000:" * $Omitted
-			}
-
-			if( $i -ge $Max ){
-				break
-			}
-		}
-
-		# 末尾の ":" を消す
-		$FullIPv6Address = $FullIPv6Address.Substring(0, $FullIPv6Address.Length -1)
-
-		Return $FullIPv6Address
-	}
-
-	##########################################################################
-	# IPv6 Address を Byte 列にセットする
-	##########################################################################
-	[byte[]]SetIPv6AddresstoBytes([string]$IPv6Address){
-
-		[byte[]]$Bytes = @()
-
-		$AdressesPart = $IPv6Address.Split(":")
-
-		$Max = $AdressesPart.Length
-		for( $i = 0 ; $i -lt $Max ; $i++){
-			[System.UInt16]$Uint = [System.Convert]::ToUInt16($AdressesPart[$i], 16)
-			[byte[]]$TowBytes = [System.BitConverter]::GetBytes($Uint)
-			[byte[]]$NetworkOrder = $this.HostNetwork($TowBytes)
-			$Bytes += $NetworkOrder
-		}
-
-		Return $Bytes
-	}
-
-	##########################################################################
 	# ICMPv6 チェックサム用データ作成
 	##########################################################################
 	[byte[]]MakeICMPv6ChecksumData(){
@@ -198,18 +86,14 @@ class ICMPv6Client {
 		[byte[]]$Body = @()
 
 		### 疑似ヘッダ
-
 		# 送信元 IPv6 アドレス(128)
-		# $IPv6AddressBytes = $this.SetIPv6AddresstoBytes($this.SrcFullIPv6Address)
-		$Body += $this.SetIPv6AddresstoBytes($this.SrcFullIPv6Address)
+		$Body += $this.SrcIPv6Address.GetAddressBytes()
 
 		# 宛先 IPv6 アドレス(128)
-		# $IPv6AddressBytes = $this.SetIPv6AddresstoBytes($this.DstFullIPv6Address)
-		$Body += $this.SetIPv6AddresstoBytes($this.DstFullIPv6Address)
+		$Body += $this.DstIPv6Address.GetAddressBytes()
 
 		# 上位レイヤー プロトコル パケット長(32)
-		[System.UInt32]$Length = $this.CV_ICMPv6Data.Length
-		#$Length = [System.Net.IPAddress]::HostToNetworkOrder( $Length )
+		[System.UInt32]$Length = $this.ICMPv6Data.Length
 		[byte[]]$ByteLength = [System.BitConverter]::GetBytes($Length)
 		$ByteLength = $this.HostNetwork($ByteLength)
 		$Body += $ByteLength
@@ -224,7 +108,7 @@ class ICMPv6Client {
 		$Body += $Protocol
 
 		### 上位レイヤー データ
-		$Body += $this.CV_ICMPv6Data
+		$Body += $this.ICMPv6Data
 
 		Return $Body
 	}
@@ -273,8 +157,8 @@ class ICMPv6Client {
 	##########################################################################
 	[void] SetComputeChecksum( [byte[]]$ByteChecksum ){
 
-		$this.CV_ICMPv6Data[2] = $ByteChecksum[0]
-		$this.CV_ICMPv6Data[3] = $ByteChecksum[1]
+		$this.ICMPv6Data[2] = $ByteChecksum[0]
+		$this.ICMPv6Data[3] = $ByteChecksum[1]
 	}
 
 	##########################################################################
@@ -292,21 +176,21 @@ class ICMPv6Client {
 		# 宛先 IPv6 アドレス(128)
 
 		## ICMPv6 (RFC 4443)
-		$this.CV_ICMPv6Data = @()
+		$this.ICMPv6Data = @()
 
 		# Type(8)
-		$this.CV_ICMPv6Data += $Type
+		$this.ICMPv6Data += $Type
 
 		# Code(8)
-		$this.CV_ICMPv6Data += $Code
+		$this.ICMPv6Data += $Code
 
 		# チェックサム(16)
 		$Checksum = New-Object byte[] 2
 		$Checksum = @(0x00, 0x00)
-		$this.CV_ICMPv6Data += $Checksum
+		$this.ICMPv6Data += $Checksum
 
 		# Message Body
-		$this.CV_ICMPv6Data += $MessageBody
+		$this.ICMPv6Data += $MessageBody
 	}
 
 	#-------------------------------------------------------------------------
@@ -321,7 +205,7 @@ class ICMPv6Client {
 		$SocketType = [System.Net.Sockets.SocketType]::Raw
 		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
 
-		$this.CV_Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
+		$this.Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
 	}
 
 	##########################################################################
@@ -335,7 +219,7 @@ class ICMPv6Client {
 		$SocketType = [System.Net.Sockets.SocketType]::Raw
 		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
 
-		$this.CV_Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
+		$this.Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
 	}
 
 	##########################################################################
@@ -369,12 +253,10 @@ class ICMPv6Client {
 	[void]SetIPv6Address( [string]$SrcIPv6Address, [string]$DstIPv6Address){
 
 		# 送信元 IPv6 アドレス(128)
-		$this.SrcIPv6Address = $SrcIPv6Address
-		$this.SrcFullIPv6Address = $this.DecodeIPv6Address($SrcIPv6Address)
+		$this.SrcIPv6Address = [System.Net.IPAddress]::Parse($SrcIPv6Address)
 
 		# 宛先 IPv6 アドレス(128)
-		$this.DstIPv6Address = $DstIPv6Address
-		$this.DstFullIPv6Address = $this.DecodeIPv6Address($DstIPv6Address)
+		$this.DstIPv6Address = [System.Net.IPAddress]::Parse($DstIPv6Address)
 	}
 
 	##########################################################################
@@ -393,7 +275,9 @@ class ICMPv6Client {
 		# チェックサム セット
 		$this.SetComputeChecksum($ByteChecksum)
 
-		# SendTo
+		# 送信
+		$IPEndPoint = New-Object System.Net.IPEndPoint( $this.DstIPv6Address, 0 )
+		$this.Socket.SendTo($this.ICMPv6Data, $IPEndPoint)
 	}
 
 	##########################################################################
