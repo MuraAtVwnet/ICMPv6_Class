@@ -280,13 +280,13 @@ class ICMPv6Client {
 	Dispose(){
 		$Shutdown = [System.Net.Sockets.SocketShutdown]::Both
 		try {
-			$this.CV_Socket.Shutdown($Shutdown)
-			$this.CV_Socket.Close()
+			$this.Socket.Shutdown($Shutdown)
+			$this.Socket.Close()
 		}
 		catch{
 			# エラーは握りつぶす w
 			try {
-				$this.CV_Socket.Close()
+				$this.Socket.Close()
 			}
 			catch{}
 		}
@@ -347,7 +347,8 @@ class ICMPv6Client {
 		else{
 			try{
 				[byte[]]$Bytes = [System.BitConverter]::GetBytes($Numeric)
-				$ReturnBytes = $this.HostNetwork($Bytes)			}
+				$ReturnBytes = $this.HostNetwork($Bytes)
+			}
 			catch{
 				$ReturnBytes = $null
 			}
