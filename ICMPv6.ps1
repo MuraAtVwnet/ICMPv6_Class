@@ -193,6 +193,50 @@ class ICMPv6Client {
 		$this.ICMPv6Data += $MessageBody
 	}
 
+	##########################################################################
+	# 送信元 IPv6 アドレス選定
+	# 一時 IPv6 アドレスと IPv6 アドレスの見分け方法が現状不明 orz
+	##########################################################################
+	[ipaddress]SelectLongMatch([ipaddress[]]$LocalIPv6Address ){
+
+		# 宛先 IPv6 アドレスの byte 列
+		[byte[]]$ByteDstIPv6Address = $this.DstIPv6Address.GetAddressBytes()
+
+		[ipaddress]$ReturnIPv6Address = $LocalIPv6Address[0]	# 初期値(Dummy)
+
+		$AddressMax = $LocalIPv6Address.Count
+		$OldMatchBits = 0
+
+		# ローカル IPv6 アドレス loop
+		for( $i = 0; $i -lt $AddressMax; $i++ ){
+			[byte[]]$NowByteLocalIPv6Address = $LocalIPv6Address[$i].GetAddressBytes()
+			$NowMatchBits = 0
+
+			# バイト単位の比較 loop
+:EndMatch	for( $j = 0; $j -lt 8; $j++ ){
+
+				# ビット比較 loop
+				for( $k = 7; $k -gt 0; $k--){
+					if( (($ByteDstIPv6Address[$j] -shr $k) -band 1) -eq (($NowByteLocalIPv6Address[$j] -shr $k) -band 1) ){
+						$NowMatchBits++
+					}
+					else{
+						break EndMatch
+					}
+				}
+			}
+
+			# よりマッチした
+			if( $OldMatchBits -lt $NowMatchBits ){
+				$ReturnIPv6Address = $LocalIPv6Address[$i]
+				$OldMatchBits = $NowMatchBits
+			}
+		}
+
+		Return $ReturnIPv6Address
+	}
+
+
 	#-------------------------------------------------------------------------
 	# 公開 メソッド (public 扱い)
 	#-------------------------------------------------------------------------
@@ -201,20 +245,6 @@ class ICMPv6Client {
 	# コンストラクタ
 	##########################################################################
 	ICMPv6Client(){
-		$AddressFamily = [System.Net.Sockets.AddressFamily]::InterNetworkV6
-		$SocketType = [System.Net.Sockets.SocketType]::Raw
-		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
-
-		$this.Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
-	}
-
-	##########################################################################
-	# コンストラクタ
-	##########################################################################
-	ICMPv6Client( [string]$SrcIPv6Address, [string]$DstIPv6Address ){
-
-		$this.SetIPv6Address( $SrcIPv6Address, $DstIPv6Address)
-
 		$AddressFamily = [System.Net.Sockets.AddressFamily]::InterNetworkV6
 		$SocketType = [System.Net.Sockets.SocketType]::Raw
 		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
@@ -248,15 +278,61 @@ class ICMPv6Client {
 	}
 
 	##########################################################################
-	# IPv6 アドレス指定
+	# IPv6 アドレス指定(送信元自動選択)
 	##########################################################################
-	[void]SetIPv6Address( [string]$SrcIPv6Address, [string]$DstIPv6Address){
-
-		# 送信元 IPv6 アドレス(128)
-		$this.SrcIPv6Address = [System.Net.IPAddress]::Parse($SrcIPv6Address)
+	[void]SetIPv6Address( [string]$DstIPv6Address ){
 
 		# 宛先 IPv6 アドレス(128)
 		$this.DstIPv6Address = [System.Net.IPAddress]::Parse($DstIPv6Address)
+
+		# Local IPv6 Address
+		[ipaddress[]]$LocalIPAddress = [System.Net.Dns]::GetHostAddresses( [System.Net.Dns]::GetHostName())
+		[ipaddress[]]$LocalIPv6Address = $LocalIPAddress | ? AddressFamily -eq "InterNetworkV6"
+
+		if( $LocalIPv6Address.Count -eq 0 ){
+			$ErrorActionPreference = "Stop"
+			throw "IPv6 Address not include."
+		}
+
+		# 送信元 IPv6 アドレス(128)
+		$this.SrcIPv6Address = $this.SelectLongMatch( $LocalIPv6Address )
+	}
+
+	##########################################################################
+	# IPv6 アドレス指定(送信元指定)
+	##########################################################################
+	[void]SetIPv6Address( [string]$DstIPv6Address, [string]$SrcIPv6Address ){
+
+		# 宛先 IPv6 アドレス(128)
+		$this.DstIPv6Address = [System.Net.IPAddress]::Parse($DstIPv6Address)
+
+		# 送信元 IPv6 アドレス(128)
+		$this.SrcIPv6Address = [System.Net.IPAddress]::Parse($SrcIPv6Address)
+	}
+
+	##########################################################################
+	# ネットワークオーダーのバイト配列にする
+	##########################################################################
+	[byte[]]GetNetworkBytes([System.ValueType]$Numeric){
+
+		[byte[]]$ReturnBytes = @()
+
+		$Type = $Numeric.GetType().Name
+		if(($Type -eq "SByte") -or ($Type -eq "Byte")){
+			[byte]$Byte = $Numeric
+			$ReturnBytes += $Byte
+		}
+		else{
+			try{
+				[byte[]]$Bytes = [System.BitConverter]::GetBytes($Numeric)
+    			$ReturnBytes = $this.HostNetwork($Bytes)			}
+			catch{
+				$ReturnBytes = $null
+			}
+
+		}
+
+		Return $ReturnBytes
 	}
 
 	##########################################################################
