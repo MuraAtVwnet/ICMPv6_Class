@@ -54,6 +54,16 @@ class ICMPv6Client {
 	# 内部 メソッド (protected 扱い)
 	#-------------------------------------------------------------------------
 	##########################################################################
+	# socket作成
+	##########################################################################
+	[void]CreateSocket(){
+		$AddressFamily = [System.Net.Sockets.AddressFamily]::InterNetworkV6
+		$SocketType = [System.Net.Sockets.SocketType]::Raw
+		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
+		$this.Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
+	}
+
+	##########################################################################
 	# ホストバイトオーダー/ネットワークバイトオーダー(ビッグエンディアン)変換
 	##########################################################################
 	[byte[]]HostNetwork([byte[]]$Data){
@@ -245,11 +255,23 @@ class ICMPv6Client {
 	# コンストラクタ
 	##########################################################################
 	ICMPv6Client(){
-		$AddressFamily = [System.Net.Sockets.AddressFamily]::InterNetworkV6
-		$SocketType = [System.Net.Sockets.SocketType]::Raw
-		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
+		$this.CreateSocket()
+	}
 
-		$this.Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
+	##########################################################################
+	# コンストラクタ
+	##########################################################################
+	ICMPv6Client([string]$DstIPv6Address){
+		$this.CreateSocket()
+		$this.SetIPv6Address( $DstIPv6Address )
+	}
+
+	##########################################################################
+	# コンストラクタ
+	##########################################################################
+	ICMPv6Client([string]$DstIPv6Address, [string]$SrcIPv6Address){
+		$this.CreateSocket()
+		$this.SetIPv6Address( $DstIPv6Address, $SrcIPv6Address )
 	}
 
 	##########################################################################
@@ -325,7 +347,7 @@ class ICMPv6Client {
 		else{
 			try{
 				[byte[]]$Bytes = [System.BitConverter]::GetBytes($Numeric)
-    			$ReturnBytes = $this.HostNetwork($Bytes)			}
+				$ReturnBytes = $this.HostNetwork($Bytes)			}
 			catch{
 				$ReturnBytes = $null
 			}
