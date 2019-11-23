@@ -436,4 +436,47 @@ class ICMPv6Client {
 
 		Return $ReturnBuffer
 	}
+
+	##########################################################################
+	# チェックサム確認
+	##########################################################################
+	[bool]TestChecksum([byte[]]$Body){
+
+		# 2バイトずつ取り出し、Sum を求める
+		[System.UInt32]$Sum = 0
+		$Max = $Body.Length
+		$Bytes = New-Object byte[] 2
+		for( $i = 0; $i -lt $Max; $i += 2 ){
+			$Bytes = @($Body[$i], $Body[$i +1])
+			[System.UInt16]$Data = $this.GetHostUint16($Bytes, 0)
+			$Sum += $Data
+		}
+
+		# オーバーフロー部分取り出し($Sum >> 16)
+		[System.UInt16]$OverFlow = $Sum -shr 16
+
+		# Sum の Uint16 部分($Sum << 16 >> 16)
+		[System.UInt32]$Sum32 = ($Sum -shl 16) -shr 16
+
+		# オーバーフロー加算
+		$Sum32 += $OverFlow
+
+		# Uint16 部分のみ取り出す
+		[System.UInt16]$Sum16 = ($Sum32 -shl 16) -shr 16
+
+		[bool]$ReturnStatus = $Sum16 -eq 0xffff
+
+		Return $ReturnStatus
+	}
 }
+
+
+<#
+
+		$this.Socket.SetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
+										[System.Net.Sockets.SocketOptionName]::AcceptConnection, 1)
+
+		[byte[]]$OptionInValue = @( 0x00, 0x00, 0x00, 0x01 )
+		[byte[]]$OptionOutValue = @( 0x00, 0x00, 0x00, 0x00 )
+		$this.Socket.IOControl( [System.Net.Sockets.IOControlCode]::ReceiveAll, $OptionInValue, $OptionOutValue)
+#>
