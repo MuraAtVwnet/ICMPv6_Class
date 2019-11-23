@@ -33,7 +33,7 @@ class ICMPv6Client {
 
 	#------------------------------------------------
 	# ストリーム
-	[System.Net.Sockets.NetworkStream] $CV_Stream
+	[System.IO.MemoryStream] $Stream
 
 	# ライター
 	[System.IO.StreamWriter] $CV_Writer
@@ -134,9 +134,7 @@ class ICMPv6Client {
 		$Bytes = New-Object byte[] 2
 		for( $i = 0; $i -lt $Max; $i += 2 ){
 			$Bytes = @($Body[$i], $Body[$i +1])
-			$Bytes = $this.HostNetwork( $Bytes )
-			[System.UInt16]$Data = [System.BitConverter]::ToUInt16($Bytes, 0)
-
+			[System.UInt16]$Data = $this.GetHostUint16($Bytes, 0)
 			$Sum += $Data
 		}
 
@@ -421,11 +419,21 @@ class ICMPv6Client {
 	##########################################################################
 	# 受信
 	##########################################################################
-	[byte[]] Receive (){
-		# ReceiveFrom
-		Return (New-Object byte[] 3)
+	[byte[]] Receive([int]$WaitTime ){
+
+		[byte[]]$Buffer = New-Object byte[] $this.CCONF_BufferSize
+
+		[System.IAsyncResult]$Result = $this.Socket.BeginReceive( $Buffer, 0, $this.CCONF_BufferSize,
+																	[System.Net.Sockets.SocketFlags]::None, $null, $null )
+		Start-Sleep -Seconds $WaitTime
+		$ReceiveSize = $this.Socket.EndReceive($Result)
+
+		[byte[]]$ReturnBuffer = New-Object byte[] $ReceiveSize
+
+		for($i = 0; $i -lt $ReceiveSize; $i++){
+			$ReturnBuffer[$i] = $Buffer[$i]
+		}
+
+		Return $ReturnBuffer
 	}
-
 }
-
-
