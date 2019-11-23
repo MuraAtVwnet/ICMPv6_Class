@@ -352,10 +352,49 @@ class ICMPv6Client {
 			catch{
 				$ReturnBytes = $null
 			}
-
 		}
 
 		Return $ReturnBytes
+	}
+
+	##########################################################################
+	# ホストオーダーの数値にする(Uint16)
+	##########################################################################
+	[System.UInt16]GetHostUint16([byte[]]$Bytes, [System.Int32]$Index){
+
+		$SizeOfValue = 2
+
+		[System.UInt16]$ReturnValue = 0
+
+		[byte[]]$WorkBytes = New-Object byte[] $SizeOfValue
+		for($i = 0; $i -lt $SizeOfValue; $i++ ){
+			$WorkBytes[$i] = $Bytes[$i + $Index]
+		}
+
+		$HostBytes = $this.HostNetwork($WorkBytes)
+		$ReturnValue = [System.BitConverter]::ToUInt16($HostBytes , 0)
+
+		Return $ReturnValue
+	}
+
+	##########################################################################
+	# ホストオーダーの数値にする(Uint32)
+	##########################################################################
+	[System.UInt32]GetHostUint32([byte[]]$Bytes, [System.Int32]$Index){
+
+		$SizeOfValue = 4
+
+		[System.UInt32]$ReturnValue = 0
+
+		[byte[]]$WorkBytes = New-Object byte[] $SizeOfValue
+		for($i = 0; $i -lt $SizeOfValue; $i++ ){
+			$WorkBytes[$i] = $Bytes[$i + $Index]
+		}
+
+		$HostBytes = $this.HostNetwork($WorkBytes)
+		$ReturnValue = [System.BitConverter]::ToUInt32($HostBytes , 0)
+
+		Return $ReturnValue
 	}
 
 	##########################################################################
