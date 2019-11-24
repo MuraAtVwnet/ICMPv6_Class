@@ -31,6 +31,12 @@ class ICMPv6Client {
 	# 宛先 IPv6 アドレス
 	[System.Net.IPAddress] $DstIPv6Address
 
+	# 受信バッファ
+	[byte[]]$Buffer
+
+	# TTL
+	[Int32]$TTL
+
 	#------------------------------------------------
 	# ストリーム
 	[System.IO.MemoryStream] $Stream
@@ -61,6 +67,9 @@ class ICMPv6Client {
 		$SocketType = [System.Net.Sockets.SocketType]::Raw
 		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
 		$this.Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
+
+		# TTL 初期値セット
+		$this.TTL = 1
 	}
 
 	##########################################################################
@@ -291,10 +300,10 @@ class ICMPv6Client {
 	}
 
 	##########################################################################
-	# 環境設定変更
+	# TTL 設定
 	##########################################################################
-	[void]SetEnvironment(){
-		# 必要であれば書く
+	[void]SetTTL([Int32]$TTL){
+		$this.TTL = $TTL
 	}
 
 	##########################################################################
@@ -413,25 +422,55 @@ class ICMPv6Client {
 
 		# 送信
 		$IPEndPoint = New-Object System.Net.IPEndPoint( $this.DstIPv6Address, 0 )
+
+		# TTL セット
+		$this.Socket.SetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
+										[System.Net.Sockets.SocketOptionName]::HopLimit,
+										$this.TTL)
+
+		# Debug(なぜ HopLimit がセットできない??)
+		$Data = $this.Socket.GetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
+										[System.Net.Sockets.SocketOptionName]::HopLimit)
+
 		$this.Socket.SendTo($this.ICMPv6Data, $IPEndPoint)
 	}
 
 	##########################################################################
 	# 受信
 	##########################################################################
-	[byte[]] Receive([int]$WaitTime ){
+	[byte[]] Receive(){
 
-		[byte[]]$Buffer = New-Object byte[] $this.CCONF_BufferSize
+		# 受信開始
+		[System.IAsyncResult]$Result = $this.ReceiveStart()
 
-		[System.IAsyncResult]$Result = $this.Socket.BeginReceive( $Buffer, 0, $this.CCONF_BufferSize,
+		# 受信終了
+		[byte[]]$ReturnBuffer = $this.ReceiveEnd($Result)
+
+		Return $ReturnBuffer
+	}
+
+	##########################################################################
+	# 受信開始
+	##########################################################################
+	[System.IAsyncResult]ReceiveStart(){
+		$this.Buffer = New-Object byte[] $this.CCONF_BufferSize
+
+		[System.IAsyncResult]$Result = $this.Socket.BeginReceive( $this.Buffer, 0, $this.CCONF_BufferSize,
 																	[System.Net.Sockets.SocketFlags]::None, $null, $null )
-		Start-Sleep -Seconds $WaitTime
+		Return $Result
+	}
+
+	##########################################################################
+	# 受信終了
+	##########################################################################
+	[byte[]]ReceiveEnd([System.IAsyncResult]$Result){
+
 		$ReceiveSize = $this.Socket.EndReceive($Result)
 
 		[byte[]]$ReturnBuffer = New-Object byte[] $ReceiveSize
 
 		for($i = 0; $i -lt $ReceiveSize; $i++){
-			$ReturnBuffer[$i] = $Buffer[$i]
+			$ReturnBuffer[$i] = $this.Buffer[$i]
 		}
 
 		Return $ReturnBuffer
