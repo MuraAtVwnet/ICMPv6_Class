@@ -34,9 +34,6 @@ class ICMPv6Client {
 	# 受信バッファ
 	[byte[]]$Buffer
 
-	# TTL
-	[Int32]$TTL
-
 	#------------------------------------------------
 	# ストリーム
 	[System.IO.MemoryStream] $Stream
@@ -295,10 +292,23 @@ class ICMPv6Client {
 	}
 
 	##########################################################################
-	# TTL 設定
+	# TTL 設定(Multicast)
 	##########################################################################
-	[void]SetTTL([Int32]$TTL){
-		$this.TTL = $TTL
+	[void]SetMulticastTTL([Int32]$TTL){
+		# $this.TTL = $TTL
+		$this.Socket.SetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
+										[System.Net.Sockets.SocketOptionName]::MulticastTimeToLive,
+										$TTL)
+	}
+
+	##########################################################################
+	# TTL 設定(UNICAST)
+	##########################################################################
+	[void]SetUNICASTTTL([Int32]$TTL){
+		# $this.TTL = $TTL
+		$this.Socket.SetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
+										[System.Net.Sockets.SocketOptionName]::IpTimeToLive,
+										$TTL)
 	}
 
 	##########################################################################
@@ -417,16 +427,6 @@ class ICMPv6Client {
 
 		# 送信
 		$IPEndPoint = New-Object System.Net.IPEndPoint( $this.DstIPv6Address, 0 )
-
-		# TTL セット
-		$this.Socket.SetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
-										[System.Net.Sockets.SocketOptionName]::HopLimit,
-										$this.TTL)
-
-		# Debug(なぜ HopLimit がセットできない??)
-		$Data = $this.Socket.GetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
-										[System.Net.Sockets.SocketOptionName]::HopLimit)
-
 		$this.Socket.SendTo($this.ICMPv6Data, $IPEndPoint)
 	}
 
