@@ -113,10 +113,7 @@ class ICMPv6Client {
 
 		# 上位レイヤー プロトコル パケット長(32)
 		[System.UInt32]$Length = $this.ICMPv6Data.Length
-		[byte[]]$ByteLength = [System.BitConverter]::GetBytes($Length)
-		$ByteLength = $this.HostNetwork($ByteLength)
-		$Body += $ByteLength
-
+		$Body += $this.GetNetworkBytes($Length)
 		# zero(24)
 		$Zero = New-Object byte[] 3
 		$Zero = @(0x00, 0x00, 0x00)
@@ -163,9 +160,7 @@ class ICMPv6Client {
 		[System.UInt16]$Checksum = $Sum16 -bxor 0xffff
 
 		# ネットワークオーダーにする
-		[byte[]]$ByteChecksum = [System.BitConverter]::GetBytes($Checksum)
-		$ByteChecksum = $this.HostNetwork($ByteChecksum)
-
+		$ByteChecksum = $this.GetNetworkBytes($Checksum)
 		Return $ByteChecksum
 	}
 
