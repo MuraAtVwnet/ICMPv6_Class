@@ -34,25 +34,6 @@ class ICMPv6Client {
 	# 受信バッファ
 	[byte[]]$Buffer
 
-	#------------------------------------------------
-	# ストリーム
-	[System.IO.MemoryStream] $Stream
-
-	# ライター
-	[System.IO.StreamWriter] $CV_Writer
-
-	# 受信バッファ
-	[Byte[]] $CV_ReceiveBuffer
-
-	# 送信バッファ
-	[Byte[]] $CV_SendBuffer
-
-	# 受信バッファ Index
-	[int] $CV_ReceiveBufferIndex
-
-	# 送信バッファ Index
-	[int] $CV_SendBufferIndex
-
 	#-------------------------------------------------------------------------
 	# 内部 メソッド (protected 扱い)
 	#-------------------------------------------------------------------------
@@ -64,9 +45,6 @@ class ICMPv6Client {
 		$SocketType = [System.Net.Sockets.SocketType]::Raw
 		$ProtocolType = [System.Net.Sockets.ProtocolType]::IcmpV6
 		$this.Socket = New-Object System.Net.Sockets.Socket( $AddressFamily, $SocketType, $ProtocolType )
-
-		# TTL 初期値セット
-		$this.TTL = 1
 	}
 
 	##########################################################################
@@ -503,14 +481,3 @@ class ICMPv6Client {
 		Return $ReturnStatus
 	}
 }
-
-
-<#
-
-		$this.Socket.SetSocketOption( [System.Net.Sockets.SocketOptionLevel]::IPv6,
-										[System.Net.Sockets.SocketOptionName]::AcceptConnection, 1)
-
-		[byte[]]$OptionInValue = @( 0x00, 0x00, 0x00, 0x01 )
-		[byte[]]$OptionOutValue = @( 0x00, 0x00, 0x00, 0x00 )
-		$this.Socket.IOControl( [System.Net.Sockets.IOControlCode]::ReceiveAll, $OptionInValue, $OptionOutValue)
-#>
