@@ -152,6 +152,11 @@ class ICMPv6Client {
 	# ICMPv6 データ作成
 	##########################################################################
 	[void] CreateICMPv6([byte]$Type, [byte]$Code, [byte[]]$MessageBody){
+		## イーサネット
+		# Destination(48)
+		# Source(48)
+		# Type(16) : 0x86dd
+
 		## IPv6(RFC 8200)
 		# Version(4) (0110)
 		# トラフィッククラス(8)
