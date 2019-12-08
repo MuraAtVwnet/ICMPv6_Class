@@ -87,3 +87,9 @@ New-Object ICMPv6Client() でコンストラクタを呼びます。
 ・チェックサム確認
     [bool]TestChecksum([byte[]]$Body)
     データのチェックサム整合性確認
+
+
+■ Web site
+PowerShell で ICMPv6 のチェックサムの計算をする
+https://www.vwnet.jp/Windows/PowerShell/2019111701/ICMPv6Checksum.htm
+
